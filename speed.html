@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speed Tracker | Reece Nicholls</title>
+    <meta name="description" content="A simple speed tracker tool.">
+    <link rel="icon" href="./assets/favicon.ico">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script src="./lib/theme.js"></script>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" 
+            rel="stylesheet"
+            integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+            crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="./lib/style.css">
+</head>
+<body class="d-flex flex-column min-vh-100 bg-body-tertiary">
+    
+    <nav class="navbar navbar-expand-lg bg-body border-bottom py-3">
+      <div class="container px-4">
+        <a class="navbar-brand fs-4 fw-bold tracking-tighter" href="./">Reece Nicholls</a>
+        <button class="btn ms-auto" id="theme-btn" type="button" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+          <i class="bi bi-moon-stars"></i>
+        </button>
+      </div>
+    </nav>
+
+    <main class="flex-grow-1 d-flex align-items-center py-5">
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-md-6 col-lg-5">
+                    <div class="card shadow-lg border-0 rounded-5 overflow-hidden">
+                        <div class="card-body p-5 text-center">
+                            <h1 class="text-danger fw-extrabold mb-0" style="font-size: 6rem; letter-spacing: -0.05em;" id="maxSpeed">0</h1>
+                            <p class="text-muted text-uppercase fw-bold tracking-widest small mb-5">Maximum Speed Limit</p>
+                            
+                            <hr class="my-4 opacity-10">
+
+                            <div class="mb-5">
+                                <h2 class="h3 fw-bold mb-2" id="streetName">Locating...</h2>
+                                <p class="text-primary fw-semibold mb-0" id="ref"></p>
+                            </div>
+
+                            <div class="bg-body-secondary p-4 rounded-4 small text-secondary fw-medium">
+                                <div id="latitude" class="mb-1">Lat: --</div>
+                                <div id="longitude">Lon: --</div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-center text-muted small mt-4 fw-medium">
+                        Developed by Reece N. &bull; Powered by OpenStreetMap
+                    </p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        var maxSpeedLabel = document.getElementById('maxSpeed');
+        var streetNameLabel = document.getElementById('streetName');
+        var refLabel = document.getElementById('ref');
+        var latitudeLabel = document.getElementById('latitude');
+        var longitudeLabel = document.getElementById('longitude');
+        
+
+        var currentLocation = [0, 0];
+        var speed = 0;
+        var streetName = "";
+        var ref = "";
+
+        function update() {
+            maxSpeedLabel.innerText = window.speed || "0";
+            streetNameLabel.innerText = window.streetName || "Street Name";
+            refLabel.innerText = window.ref ? "Ref: " + window.ref : "";
+            latitudeLabel.innerText = "Lat: " + (currentLocation[0] ? currentLocation[0].toFixed(6) : "--");
+            longitudeLabel.innerText = "Lon: " + (currentLocation[1] ? currentLocation[1].toFixed(6) : "--");
+        }
+
+        setInterval(function(){
+            getLocation();
+            getSpeed();
+            update();
+        }, 5000);
+
+        function getSpeed() {
+            if (currentLocation[0] === 0 && currentLocation[1] === 0) return;
+
+            fetch(`https://overpass-api.de/api/interpreter?data=[out:json];way(around:15.0,${currentLocation[0]},${currentLocation[1]});out;`, {mode: 'cors'})
+            .then((response) => response.json())
+            .then((data) => {
+                var foundSpeed = false;
+                for(var i = 0; i < data['elements'].length; i++) {
+                    try {
+                        if(data['elements'][i]['tags']['maxspeed'] !== undefined) {
+                            foundSpeed = true;
+                            window.speed = data['elements'][i]['tags']['maxspeed'];
+                            window.streetName = data['elements'][i]['tags']['name'] || "Unknown Road";
+                            window.ref = data['elements'][i]['tags']['ref'] || "";
+                            return;
+                        }
+                    } catch(err) {
+                        console.warn(err);
+                    }
+                }
+
+                if(!foundSpeed) {
+                    var assumeResidential = false;
+                    for(var i = 0; i < data['elements'].length; i++) {
+                        try {
+                            if(data['elements'][i]['tags']['highway'] == "residential" || data['elements'][i]['tags']['building'] == "residential") {
+                                window.speed = "*30* mph";
+                                assumeResidential = true;
+                            }
+                        } catch(err) {
+                            console.warn(err);
+                        }
+                    }
+                    
+                    if(!assumeResidential) {
+                        window.speed = "?";
+                    }
+
+                    if (data['elements'][0] && data['elements'][0]['tags']) {
+                        window.streetName = data['elements'][0]['tags']['name'] || "Unknown Road";
+                        window.ref = data['elements'][0]['tags']['ref'] || "";
+                    }
+                }
+            })
+            .catch((err) => console.error(err));
+        }
+
+        function getLocation() {
+            var options = {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
+            };
+
+            function success(pos) {
+                var crd = pos.coords;
+                window.currentLocation = [crd.latitude, crd.longitude];
+            }
+
+            function error(err) {
+                console.warn(`ERROR(${err.code}): ${err.message}`);
+            }
+
+            navigator.geolocation.getCurrentPosition(success, error, options);
+        }
+
+        getLocation();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script src="./lib/site.js"></script>
+</body>
+</html>
